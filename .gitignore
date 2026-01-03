@@ -1,207 +1,459 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+# college_timetable
 
-# C extensions
-*.so
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog, simpledialog
+from collections import defaultdict
+import csv
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+DAYS = ["MON", "TUES", "WED", "THU", "FRI", "SAT"]
+SLOTS = [
+    "9:10-10:05",
+    "10:05-11:00",
+    "11:15-12:10",
+    "12:10-01:05",
+    "01:05-02:00",
+    "02:00-02:40 (BREAK)",   
+    "02:40-03:35",
+    "03:35-04:30"            
+]
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
+BREAK_SLOT_INDEX = 5   
 
-# Translations
-*.mo
-*.pot
+# UI sizing
+CELL_WIDTH = 16
+CELL_HEIGHT = 4
+WRAP_LENGTH = 140
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
-# Flask stuff:
-instance/
-.webassets-cache
+class Subject:
+    def __init__(self, name, teachers, stype, per_week):
+        self.name = name.strip()
+        self.teachers = [t.strip() for t in teachers.split(",") if t.strip()]
+        self.type = stype  # "Lecture" or "Lab"
+        try:
+            self.per_week = int(per_week)
+        except Exception:
+            self.per_week = 1
+        # labs occupy 2 consecutive slots
+        self.duration = 2 if stype.lower() == "lab" else 1
 
-# Scrapy stuff:
-.scrapy
+class Timetable:
+    def __init__(self):
+        # key: (day_index, slot_index) -> (subject_name, teacher_name)
+        self.grid = {}
+        self.teacher_busy = defaultdict(set)  # teacher -> set((day,slot))
+        self.subj_count = defaultdict(int)
 
-# Sphinx documentation
-docs/_build/
+    def occupy(self, day, slot, subj_name, teacher=""):
+        self.grid[(day, slot)] = (subj_name, teacher)
+        if teacher:
+            self.teacher_busy[teacher].add((day, slot))
 
-# PyBuilder
-.pybuilder/
-target/
+    def is_free_block(self, day, slot, dur):
+        for k in range(dur):
+            idx = slot + k
+            if idx >= len(SLOTS):
+                return False
+            # don't occupy break slot
+            if "BREAK" in SLOTS[idx]:
+                return False
+            if (day, idx) in self.grid:
+                return False
+        return True
 
-# Jupyter Notebook
-.ipynb_checkpoints
+    def teacher_ok(self, teacher, day, slot, dur, availability, substitutes):
+        
+        if not teacher:
+            return True
+        
+        if availability.get(teacher) and availability[teacher][day] == 0:
+            sub = substitutes.get(teacher)
+            if sub and self.teacher_ok(sub, day, slot, dur, availability, substitutes):
+                return True
+            return False
+        
+        for k in range(dur):
+            if (day, slot + k) in self.teacher_busy[teacher]:
+                return False
+        return True
 
-# IPython
-profile_default/
-ipython_config.py
+    def place(self, subj: Subject, teacher, day, slot):
+        for k in range(subj.duration):
+            self.occupy(day, slot + k, subj.name, teacher)
+        
+        self.subj_count[subj.name] += subj.duration
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+    def matrix(self):
+        
+        m = []
+        for d in range(len(DAYS)):
+            row = []
+            for s in range(len(SLOTS)):
+                val = self.grid.get((d, s))
+                if val:
+                    txt = f"{val[0]}\n({val[1]})" if val[1] else f"{val[0]}"
+                else:
+                    
+                    if "BREAK" in SLOTS[s]:
+                        txt = "BREAK"
+                    else:
+                        txt = ""
+                row.append(txt)
+            m.append(row)
+        return m
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+def schedule(subjects, availability, substitutes):
+   
+    tt = Timetable()
 
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
+    
+    for d in range(len(DAYS)):
+        tt.occupy(d, BREAK_SLOT_INDEX, "BREAK", "")
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
+    expanded_subjects = []
+    for s in subjects:
+        expanded_subjects.append(s)
+        
+        if s.per_week >= 4:
+            expanded_subjects.append(s)
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
+    
+    subs_sorted = sorted(expanded_subjects, key=lambda x: (x.duration, x.per_week), reverse=True)
 
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
+    def subject_on_day(name, day):
+        
+        for s in range(len(SLOTS)):
+            v = tt.grid.get((day, s))
+            if v and v[0] == name:
+                return True
+        return False
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+    
+    for _pass in range(3):
+        for subj in subs_sorted:
+            remaining = subj.per_week - tt.subj_count[subj.name]
+            while remaining > 0:
+                placed = False
+                for d in range(len(DAYS)):
+                    
+                    if subj.duration == 1 and subject_on_day(subj.name, d):
+                        continue
+                    for s in range(len(SLOTS)):
+            
+                        if "BREAK" in SLOTS[s]:
+                            continue
+                        if subj.duration == 2 and s >= len(SLOTS) - 1:
+                            continue
+                        if not tt.is_free_block(d, s, subj.duration):
+                            continue
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+                        chosen_teacher = ""
+                        pool = subj.teachers[:] if subj.teachers else [""]
+                    
+                        for t in pool:
+                            if tt.teacher_ok(t, d, s, subj.duration, availability, substitutes):
+                                chosen_teacher = t
+                                break
+                        
+                        if chosen_teacher == "" and subj.teachers:
+                            for t in subj.teachers[1:]:
+                                if tt.teacher_ok(t, d, s, subj.duration, availability, substitutes):
+                                    chosen_teacher = t
+                                    break
+                        if subj.teachers and chosen_teacher == "":
+                            
+                            continue
 
-# SageMath parsed files
-*.sage.py
+                        tt.place(subj, chosen_teacher, d, s)
+                        remaining -= subj.duration
+                        placed = True
+                        break
+                    if placed:
+                        break
+                if not placed:
+                    
+                    break
+    return tt
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# ---------------- GUI APP ----------------
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Automatic Timetable Generator - College Format")
+        
+        try:
+            self.root.state("zoomed")
+        except Exception:
+            self.root.geometry("1400x800")
 
-# Spyder project settings
-.spyderproject
-.spyproject
+        
+        self.class_subjects = defaultdict(list) 
+        self.current_class = tk.StringVar(value="7C")
+        self.teacher_availability = {}  
+        self.substitute_teacher = {}  
 
-# Rope project settings
-.ropeproject
+    
+        self._build_left()
+        self._build_right()
 
-# mkdocs documentation
-/site
+    def _build_left(self):
+        left = tk.Frame(self.root, padx=10, pady=10)
+        left.pack(side=tk.LEFT, fill=tk.Y)
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+        
+        tk.Label(left, text="Class/Section:").grid(row=0, column=0, sticky="e")
+        self.e_class = tk.Entry(left, width=12, textvariable=self.current_class)
+        self.e_class.grid(row=0, column=1, sticky="w")
+        ttk.Button(left, text="Switch/Create", command=self.on_switch_class).grid(row=0, column=2, padx=4)
 
-# Pyre type checker
-.pyre/
+        
+        tk.Label(left, text="Subject:").grid(row=1, column=0, sticky="e")
+        self.e_subj = tk.Entry(left, width=38)
+        self.e_subj.grid(row=1, column=1, columnspan=2, sticky="w")
 
-# pytype static type analyzer
-.pytype/
+        tk.Label(left, text="Teacher(s):").grid(row=2, column=0, sticky="e")
+        self.e_teachers = tk.Entry(left, width=24)
+        self.e_teachers.grid(row=2, column=1, sticky="w")
+        tk.Label(left, text="comma separated").grid(row=2, column=2, sticky="w")
 
-# Cython debug symbols
-cython_debug/
+        tk.Label(left, text="Type:").grid(row=3, column=0, sticky="e")
+        self.cbo_type = ttk.Combobox(left, values=["Lecture", "Lab"], width=10, state="readonly")
+        self.cbo_type.set("Lecture")
+        self.cbo_type.grid(row=3, column=1, sticky="w")
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+        tk.Label(left, text="Sessions/Week:").grid(row=4, column=0, sticky="e")
+        self.e_week = tk.Entry(left, width=10)
+        self.e_week.insert(0, "2")
+        self.e_week.grid(row=4, column=1, sticky="w")
 
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
+        ttk.Button(left, text="Add Subject", command=self.on_add_subject).grid(row=5, column=0, columnspan=3, pady=6, sticky="ew")
 
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+        self.listbox = tk.Listbox(left, width=60, height=12)
+        self.listbox.grid(row=6, column=0, columnspan=3, pady=6)
 
-# Ruff stuff:
-.ruff_cache/
+        
+        btns = tk.Frame(left)
+        btns.grid(row=7, column=0, columnspan=3, pady=6)
+        ttk.Button(btns, text="Mark Teacher Absent", command=self.on_absent).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btns, text="Generate Timetable", command=self.on_generate).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btns, text="Export CSV", command=self.on_export).pack(side=tk.LEFT, padx=4)
 
-# PyPI configuration file
-.pypirc
+        
+        self._refresh_listbox()
 
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
+    def _build_right(self):
+        
+        right = tk.Frame(self.root, padx=6, pady=6)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+        
+        self.canvas = tk.Canvas(right, highlightthickness=0)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        
+        self.scroll_y = tk.Scrollbar(right, orient="vertical", command=self.canvas.yview)
+        self.scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.scroll_x = tk.Scrollbar(self.root, orient="horizontal", command=self.canvas.xview)
+        self.scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.canvas.configure(yscrollcommand=self.scroll_y.set, xscrollcommand=self.scroll_x.set)
+
+    
+        self.scroll_frame = tk.Frame(self.canvas)
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
+
+        
+        def _on_frame_configure(event):
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.scroll_frame.bind("<Configure>", _on_frame_configure)
+
+        
+        def _on_canvas_configure(event):
+            self.canvas.itemconfig(self.canvas_window, height=self.scroll_frame.winfo_reqheight())
+        self.canvas.bind("<Configure>", _on_canvas_configure)
+
+        
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        def _on_shift_mousewheel(event):
+            self.canvas.xview_scroll(int(-1*(event.delta/120)), "units")
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        self.canvas.bind_all("<Shift-MouseWheel>", _on_shift_mousewheel)
+
+        
+        header = tk.Frame(self.scroll_frame)
+        header.pack(anchor="w")
+        tk.Label(header, text="Day / Time", width=14, relief="ridge").grid(row=0, column=0, sticky="nsew")
+        for j, label in enumerate(SLOTS):
+            tk.Label(header, text=label, width=CELL_WIDTH, relief="ridge").grid(row=0, column=j+1, sticky="nsew")
+
+        self.cells = []
+        grid = tk.Frame(self.scroll_frame)
+        grid.pack(anchor="w")
+
+    
+        grid.grid_columnconfigure(0, weight=0)
+        for c in range(1, len(SLOTS) + 1):
+            grid.grid_columnconfigure(c, weight=1)
+
+        for i, day in enumerate(DAYS):
+            tk.Label(grid, text=day, width=14, relief="ridge").grid(row=i+1, column=0, sticky="nsew")
+            row = []
+            for j in range(len(SLOTS)):
+                
+                if "BREAK" in SLOTS[j]:
+                    lbl = tk.Label(grid, text="BREAK", width=CELL_WIDTH, height=CELL_HEIGHT, relief="groove",
+                                   wraplength=WRAP_LENGTH, justify="center", bg="#FFF8E1")
+                else:
+                    lbl = tk.Label(grid, text="", width=CELL_WIDTH, height=CELL_HEIGHT, relief="groove",
+                                   wraplength=WRAP_LENGTH, justify="center", bg="#FAFAFA")
+                lbl.grid(row=i+1, column=j+1, padx=1, pady=1, sticky="nsew")
+                row.append(lbl)
+            self.cells.append(row)
+
+    
+    def _refresh_listbox(self):
+        self.listbox.delete(0, tk.END)
+        cls = self.current_class.get()
+        for s in self.class_subjects[cls]:
+            tnames = ", ".join(s.teachers) if s.teachers else "-"
+            self.listbox.insert(tk.END, f"{s.name} | {tnames} | {s.type} | per/week={s.per_week}")
+
+    def on_switch_class(self):
+
+        new_cls = simpledialog.askstring("Switch/Create Class", "Enter Class/Section name:", initialvalue=self.current_class.get())
+        if new_cls:
+            self.current_class.set(new_cls.strip())
+            
+            _ = self.class_subjects[new_cls]
+            self._refresh_listbox()
+            messagebox.showinfo("Class switched", f"Active class: {self.current_class.get()}")
+
+    def on_add_subject(self):
+        name = self.e_subj.get().strip()
+        if not name:
+            messagebox.showerror("Error", "Subject required.")
+            return
+        teachers = self.e_teachers.get().strip()
+        stype = self.cbo_type.get().strip()
+        try:
+            per = int(self.e_week.get().strip())
+        except Exception:
+            messagebox.showerror("Error", "Sessions/Week must be a number.")
+            return
+
+        subj = Subject(name, teachers, stype, per)
+        self.class_subjects[self.current_class.get()].append(subj)
+        
+        for t in subj.teachers:
+            if t not in self.teacher_availability:
+                
+                self.teacher_availability[t] = [1] * len(DAYS)
+
+
+        self.e_subj.delete(0, tk.END)
+        self.e_teachers.delete(0, tk.END)
+        self.cbo_type.set("Lecture")
+        self.e_week.delete(0, tk.END)
+        self.e_week.insert(0, "2")
+        self._refresh_listbox()
+
+    def on_absent(self):
+        if not self.teacher_availability:
+            messagebox.showinfo("Info", "No teachers yet.")
+            return
+        top = tk.Toplevel(self.root)
+        top.title("Mark Teacher Absent & Assign Substitute (tick = absent)")
+        checks = {}
+        substitutes = {}
+
+        r = 0
+        tk.Label(top, text="Teacher").grid(row=r, column=0, padx=6, pady=4)
+        for c, d in enumerate(DAYS):
+            tk.Label(top, text=d).grid(row=r, column=c+1)
+        tk.Label(top, text="Substitute").grid(row=r, column=len(DAYS)+1, padx=6)
+        r += 1
+
+        for t, arr in self.teacher_availability.items():
+            tk.Label(top, text=t).grid(row=r, column=0, sticky="w")
+            checks[t] = []
+            for c in range(len(DAYS)):
+                var = tk.IntVar(value=0 if arr[c] == 1 else 1)
+                cb = tk.Checkbutton(top, variable=var)
+                cb.grid(row=r, column=c+1)
+                checks[t].append(var)
+
+            sub_var = tk.StringVar(value=self.substitute_teacher.get(t, ""))
+            e = tk.Entry(top, textvariable=sub_var, width=12)
+            e.grid(row=r, column=len(DAYS)+1)
+            substitutes[t] = sub_var
+            r += 1
+
+        def save():
+            for t, vars_ in checks.items():
+                self.teacher_availability[t] = [0 if v.get() == 1 else 1 for v in vars_]
+            for t, sv in substitutes.items():
+                if sv.get().strip():
+                    self.substitute_teacher[t] = sv.get().strip()
+            top.destroy()
+
+        ttk.Button(top, text="Save", command=save).grid(row=r, column=0, columnspan=8, pady=8)
+
+    def on_generate(self):
+        cls = self.current_class.get()
+        subjects = self.class_subjects[cls]
+        if not subjects:
+            messagebox.showerror("Error", "Add subjects for this class first.")
+            return
+
+        tt = schedule(subjects, self.teacher_availability, self.substitute_teacher)
+        matrix = tt.matrix()
+
+        
+        palette = {}
+        colors = ["#E3F2FD", "#E8F5E9", "#FFF3E0", "#F3E5F5", "#FFEBEE", "#E0F7FA", "#F1F8E9", "#FBE9E7"]
+        idx = 0
+
+        for i in range(len(DAYS)):
+            for j in range(len(SLOTS)):
+                lbl = self.cells[i][j]
+                txt = matrix[i][j]
+                
+                if "BREAK" in SLOTS[j]:
+                    lbl.config(text="BREAK", bg="#FFF8E1")
+                    continue
+                lbl.config(text=txt)
+                if txt:
+                    subject_name = txt.split("\n")[0]
+                    if subject_name not in palette:
+                        palette[subject_name] = colors[idx % len(colors)]
+                        idx += 1
+                    lbl.config(bg=palette[subject_name])
+                else:
+                    lbl.config(bg="#FAFAFA")
+
+    def on_export(self):
+        
+        header = ["Day/Time"] + SLOTS
+        rows = [header]
+        for i, day in enumerate(DAYS):
+            row = [day]
+            for j in range(len(SLOTS)):
+                row.append(self.cells[i][j].cget("text"))
+            rows.append(row)
+        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+                                            initialfile=f"{self.current_class.get()}_timetable.csv")
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerows(rows)
+        messagebox.showinfo("Export", f"Saved: {path}")
+
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
